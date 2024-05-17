@@ -31,3 +31,17 @@ function get_event_registrations_count($event_id) {
         return count($registrations);
     }
 }
+
+add_action('template_redirect', 'block_registration_pages');
+
+function block_registration_pages() {
+    if (is_singular('registration')) {
+        // Vous pouvez affiner cette condition pour correspondre exactement à votre structure d'URL
+        global $wp_query;
+        $wp_query->set_404();
+        status_header(404);
+        nocache_headers();
+        include(get_query_template('404'));
+        exit;
+    }
+}
