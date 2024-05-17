@@ -111,3 +111,87 @@ function wp_mail_with_attachment($to, $subject, $message, $attachment_path) {
     wp_mail($to, $subject, $message, $headers, $attachments);
 }
 
+
+// Fonctionnalité 2 Étape 1 : Ajouter une colonne "Export" dans la vue liste des évènements
+
+// Ajouter la colonne "Export" dans la liste des événements
+add_filter('manage_edit-event_columns', 'add_export_column');
+function add_export_column($columns) {
+    $columns['export'] = __('Export', 'textdomain');
+    return $columns;
+}
+
+// Remplir la colonne "Export" avec un bouton
+add_action('manage_event_posts_custom_column', 'fill_export_column', 10, 2);
+function fill_export_column($column, $post_id) {
+    if ($column === 'export') {
+        echo '<a href="' . admin_url('admin-ajax.php?action=export_registrations&event_id=' . $post_id) . '" class="button button-primary">Export</a>';
+    }
+}
+
+// Étape 2 : Ajouter un action pour exporter les données en Excel
+
+// Inclure la bibliothèque OpenSpout
+require_once '/openspout/autoload.php'; 
+
+use Box\Spout\Writer\Common\Creator\WriterEntityFactory;
+
+// Ajouter une action pour exporter les inscriptions
+add_action('wp_ajax_export_registrations', 'export_registrations');
+
+function export_registrations() {
+    if (!current_user_can('manage_options')) {
+        wp_die(__('You do not have sufficient permissions to access this page.'));
+    }
+
+    $event_id = intval($_GET['event_id']);
+    if (!$event_id) {
+        wp_die(__('Invalid event ID.'));
+    }
+
+    // Récupérer les inscrits pour l'événement
+    $registrations = get_post_meta($event_id, '_registrations', true);
+    if (empty($registrations)) {
+        wp_die(__('No registrations found.'));
+    }
+
+    // Chemin vers le fichier temporaire
+    $upload_dir = wp_upload_dir();
+    $file_path = $upload_dir['path'] . '/registrations-' . $event_id . '.xlsx';
+
+    // Créer le fichier Excel
+    $writer = WriterEntityFactory::createXLSXWriter();
+    $writer->openToFile($file_path);
+
+    // Ajouter les en-têtes
+    $headerRow = WriterEntityFactory::createRowFromArray(['Nom', 'Prénom', 'Email', 'Téléphone']);
+    $writer->addRow($headerRow);
+
+    // Ajouter les lignes des inscrits
+    foreach ($registrations as $registration) {
+        $row = WriterEntityFactory::createRowFromArray([
+            $registration['nom'],
+            $registration['prenom'],
+            $registration['email'],
+            $registration['telephone']
+        ]);
+        $writer->addRow($row);
+    }
+
+    $writer->close();
+
+    // Forcer le téléchargement du fichier
+    header('Content-Description: File Transfer');
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . basename($file_path) . '"');
+    header('Content-Transfer-Encoding: binary');
+    header('Expires: 0');
+    header('Cache-Control: must-revalidate');
+    header('Pragma: public');
+    header('Content-Length: ' . filesize($file_path));
+    readfile($file_path);
+
+    // Supprimer le fichier temporaire après téléchargement
+    unlink($file_path);
+    exit;
+}
